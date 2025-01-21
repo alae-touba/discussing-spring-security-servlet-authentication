@@ -29,7 +29,7 @@ The HTTP request enters the servlet filter chain. Spring Security uses a Delegat
 
 One of the main filters that is almost always enabled in the filter chain is the `ExceptionTranslationFilter` which can handle security-related exceptions, such as `AuthenticationException` or `AccessDeniedException` that are thrown during the authentication process, so it delegates to `AuthenticationEntryPoint` in the case of `AuthenticationException` for example.
 
-The `UsernamePasswordAuthenticationFilter`, an implementation of `AbstractAuthenticationProcessingFilter`, plays a crucial role in intercepting and handling username/password authentication requests.
+The `UsernamePasswordAuthenticationFilter`, an implementation of `AbstractAuthenticationProcessingFilter`, is responsible for intercepting and handling username/password authentication requests.
 
 ## **3. UsernamePasswordAuthenticationFilter Attempts Authentication:**
 
@@ -64,10 +64,10 @@ If the passwords match, authentication is successful. The `AuthenticationProvide
 
 If authentication fails, an exception, usually `BadCredentialsException`, is thrown. This exception propagates up to the `ExceptionTranslationFilter` which in turns uses the `AuthenticationEntryPoint` to start the authentication process (e.g., redirect to login). Common `AuthenticationException` types include:
 
-- BadCredentialsException: Incorrect password.
-- UsernameNotFoundException: User not found.
-- LockedException: User account is locked.
-- DisabledException: User account is disabled.
+- *BadCredentialsException*: Incorrect password.
+- *UsernameNotFoundException*: User not found.
+- *LockedException*: User account is locked.
+- *DisabledException*: User account is disabled.
 
 ## **9. SecurityContext is Updated:**
 
@@ -87,7 +87,7 @@ Now, let’s try to dive a bit deeper into each one of these (and some more).
 
 ## **AbstractAuthenticationProcessingFilter: Foundation for Authentication Filters**
 
-A filter is a component that intercept and process HTTP requests and responses in a web application. Filters in Spring Security are part of the filter chain, which is a series of filters that are executed in a specific order to perform various security-related tasks.
+A filter is a component that intercept and process HTTP requests and responses in a web application (middlewares in some other frameworks). Filters in Spring Security are part of the filter chain, which is a series of filters that are executed in a specific order to perform various security-related tasks.
 
 The **`AbstractAuthenticationProcessingFilter`** is a base class for filters that handle authentication. It simplifies the creation of custom authentication filters by providing common functionality.
 
@@ -101,102 +101,132 @@ key methods :
 
 - **doFilter**
 
-The **`doFilter`** method handles requests.
+    The **`doFilter`** method handles requests.
 
-This code snipped is taken from the open source code of spring security.
+    This code snipped is taken from the open source code of spring security.
 
-```java
-@Override
-public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
-        throws IOException, ServletException {
-    HttpServletRequest request = (HttpServletRequest) req;
-    HttpServletResponse response = (HttpServletResponse) res;
+    ```java
+    @Override
+    public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
+            throws IOException, ServletException {
+        HttpServletRequest request = (HttpServletRequest) req;
+        HttpServletResponse response = (HttpServletResponse) res;
 
-    *// Check if the request matches the URL pattern*
-    if (requiresAuthentication(request, response)) {
-        *// Process authentication*
-        Authentication authResult = attemptAuthentication(request, response);
-        if (authResult == null) {
-            *// If authentication is not successful, return*;
+        // Check if the request matches the URL pattern
+        if (requiresAuthentication(request, response)) {
+            // Process authentication
+            Authentication authResult = attemptAuthentication(request, response);
+            if (authResult == null) {
+                // If authentication is not successful, return
+            }
+
+            // Successful authentication
+            successfulAuthentication(request, response, chain, authResult);
+        } else {
+            // If not an authentication request, proceed with the chain
+            chain.doFilter(request, response);
         }
+    }
+    ```
 
-        *// Successful authentication*
-        successfulAuthentication(request, response, chain, authResult);
-    } else {
-        *// If not an authentication request, proceed with the chain*
-        chain.doFilter(request, response);
+- **attemptAuthenticatication**
+
+    An abstract method that must to be implemented by filters implementing the **`AbstractAuthenticationProcessingFilter`**.  It performs the actual authentication attempt.
+
+    ```java
+    @Override
+    public Authentication attemptAuthentication(HttpServletRequest req, HttpServletResponse res)
+            throws AuthenticationException {
+        // Extract credentials (e.g., username and password)
+        String username = getUserNameFromRequest(request);
+        String password = getPasswordFromRequest(request);
+
+        // Create an authentication token
+        UsernamePasswordAuthenticationToken authRequest =
+        new UsernamePasswordAuthenticationToken(username, password);
+
+        // Delegate authentication to the AuthenticationManager configured
+        return this.getAuthenticationManager().authenticate(authRequest);
+    } catch (AuthenticationException e) {
+        // Handle authentication failure, log the error, etc.
+        throw e; // Re-throw or wrap in a custom exception
+    }
+    ```
+
+- **successfulAuthentication**
+
+    called upon successfull authentication.
+
+    snippet taken from the open source code of spring security:
+
+    ```java
+    protected void successfulAuthentication(HttpServletRequest request,
+                HttpServletResponse response, FilterChain chain, Authentication authResult)
+                throws IOException, ServletException {
+        // ...
+        // setting the authentication on the security context (meaning the request)
+        // is now authenticated
+        SecurityContextHolder.getContext().setAuthentication(authResult);
+        // ...
+    }
+    ```
+
+    Some out of the box implementations of this class are:
+
+    - **UsernamePasswordAuthenticationFilter:** Processes username/password authentication, typically used in form-based login.
+    - **BasicAuthenticationFilter:** Handles HTTP Basic Authentication (username/password in the Authorization header).
+
+## **SecurityContextHolder: Managing the SecurityContext**
+
+A helper class that stores the `SecurityContext` of the current thread. It provides static methods to access and manage the `SecurityContext`.
+
+we'll see an example later of how we may work with it.
+
+## **SecurityContext: Carrying Authentication Information**
+
+The `SecurityContext` holds crucial information about the authenticated user. It's the central repository for accessing authentication details throughout the request-response lifecycle.
+
+The `SecurityContext` is retrieved from the `SecurityContextHolder` and encapsulates the `Authentication` object representing the currently authenticated user (the principal). If you need to get any info (username, authorities, etc) of the current logged in user, you’ll need to get the `SecurityContext` first. Its is typically stored in a `SecurityContextRepository`. By default, it's stored in the `HttpSessionSecurityContextRepository`, which means it's associated with the user's HTTP session.
+
+If the `SecurityContext` contains a non null `Authentication` value, then the current user/request is authenticated.
+
+An example of how we may use the `SecurityContextHolder` and the `SecurityConetxt` and `Authentication` to get authenticated user info:
+```java
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class UserController {
+
+    @GetMapping("/userinfo")
+    public String userInfo() {
+        SecurityContext securityContext = SecurityContextHolder.getContext();
+        
+        Authentication authentication = securityContext.getAuthentication();
+        
+        if (authentication != null && authentication.isAuthenticated()) {
+            // Extract user details
+            Object principal = authentication.getPrincipal();
+            if (principal instanceof User) {
+                User user = (User) principal;
+                return "Hello " + user.getUsername();
+            } else {
+                return "Hello, anonymous user!";
+            }
+        }
+        return "No authenticated user found.";
     }
 }
 ```
 
-- **attemptAuthenticatication**
+In a tiered application, `SecurityContextHolder` makes it straightforward to access security info in different layers web, service, data access.\
+Also, common security checks like "is this user authenticated?" or "does this user have this role?" can be performed easily by accessing the `SecurityContext`
 
-An abstract method that must to be implemented by filters implementing the **`AbstractAuthenticationProcessingFilter`**.  It performs the actual authentication attempt.
 
-```java
-@Override
-public Authentication attemptAuthentication(HttpServletRequest req, HttpServletResponse res)
-        throws AuthenticationException {
-    *// Extract credentials (e.g., username and password)*
-    String username = getUserNameFromRequest(request);
-    String password = getPasswordFromRequest(request);
-
-    *// Create an authentication token*
-    UsernamePasswordAuthenticationToken authRequest =
-    new UsernamePasswordAuthenticationToken(username, password);
-
-    *// Delegate authentication to the AuthenticationManager configured*
-    return this.getAuthenticationManager().authenticate(authRequest);
-} catch (AuthenticationException e) {
-    // Handle authentication failure, log the error, etc.
-    throw e; // Re-throw or wrap in a custom exception
-}
-```
-
-- **successfulAuthentication**
-
-called upon successfull authentication.
-
-nippet taken from the open source code of spring security
-
-```java
-protected void successfulAuthentication(HttpServletRequest request,
-			HttpServletResponse response, FilterChain chain, Authentication authResult)
-			throws IOException, ServletException {
-	*//...
-	//setting the authentication on the security context (meaning the request)
-	//is now authenticated*
-	SecurityContextHolder.getContext().setAuthentication(authResult);
-	*//...*
-}
-```
-
-Some out of the box implementations of this class are:
-
-- **UsernamePasswordAuthenticationFilter:** Processes username/password authentication, typically used in form-based login.
-- **BasicAuthenticationFilter:** Handles HTTP Basic Authentication (username/password in the Authorization header).
-
-## **SecurityContextHolder: Managing the SecurityContext**
-
-A helper class that stores the SecurityContext of the current thread. It provides static methods to access and manage the SecurityContext.t.
-
-## **SecurityContext: Carrying Authentication Information**
-
-The SecurityContext holds crucial information about the authenticated user. It's the central repository for accessing authentication details throughout the request-response lifecycle.
-
-The SecurityContext is retrieved from the SecurityContextHolder and encapsulates the Authentication object representing the currently authenticated user (the principal). If you need to get any info (username, authorities, etc) of the current logged in user, you’ll need to get the SecurityContext first. The SecurityContext is typically stored in a SecurityContextRepository. By default, it's stored in the HttpSessionSecurityContextRepository, which means it's associated with the user's HTTP session.
-
-If the SecurityContext contains a non null Authentication value, then the current user/request is authenticated.
-
-```java
-Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-if (authentication != null && authentication.isAuthenticated()) {
-    *// User is authenticated
-    // Access authentication details*
-    String username = authentication.getName();
-}
-```
 
 ## **Authentication: Representing User Credentials**
 
@@ -204,28 +234,8 @@ The **`Authentication`** interface is a key player in the Spring Security auth
 
 The **`Authentication`** plays two key roles:
 
-1. **As an Input to the Authentication Process**:  It stores the credentials (such as username and password) provided by the user attempting to authenticate (input to the AuthenticationManager).
-2. **As an Output from the Authentication Process**:  It holds the authenticated principal (user details) and their granted authorities (roles/permissions) after successful authentication. The Authentication object returned by AuthenticationManager is usually a different instance than the one passed in. It's a fully populated object with the principal, authorities, and authenticated flag set to true.
-
-An example code of how to get the username of the authenticated user:
-
-```java
-*// Get the security context*
-SecurityContext securityContext = SecurityContextHolder.getContext();
-
-*// Get the authentication object*
-Authentication authentication = securityContext.getAuthentication();
-
-if (authentication != null) {
-    *// Get the principal (the authenticated user)*
-    Object principal = authentication.getPrincipal();
-
-	if (principal instanceof UserDetails userDetails) {
-	    String username = userDetails.getUsername();
-	    System.out.println("Username: " + username);
-	}
-}
-```
+1. **As an Input to the Authentication Process**:  It stores the credentials (such as username and password) provided by the user attempting to authenticate (input to the `AuthenticationManager`).
+2. **As an Output from the Authentication Process**:  It holds the authenticated principal (user details) and their granted authorities (roles/permissions) after successful authentication. The `Authentication` object returned by `AuthenticationManager` is usually a different instance than the one passed in. It's a fully populated object with the principal, authorities, and authenticated flag set to true.
 
 ## **GrantedAuthority: Defining User Authorities**
 
@@ -234,17 +244,17 @@ Authorities, such as roles or scopes, are represented by the **`GrantedAuthorit
 An example code to show how to get the list of granted authorities of the current logged in user:
 
 ```java
-*// Get the security context*
+// Get the security context
 SecurityContext securityContext = SecurityContextHolder.getContext();
 
-*// Get the authentication object*
+// Get the authentication object
 Authentication authentication = securityContext.getAuthentication();
 
 if (authentication != null) {
-    *// Get the authorities*
+    // Get the authorities
     Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
 
-    *// Convert authorities to a list of strings*
+    // Convert authorities to a list of strings
     List<String> authoritiesList = authorities
         .stream()
         .map(GrantedAuthority::getAuthority)
@@ -266,7 +276,7 @@ The input parameter `Authentication` object contains the credentials provided by
 
 The returned `Authentication` object (if authentication is successful) contains the authenticated principal (typically the user details) and their granted authorities (roles/permissions).
 
-If `AuthenticationManager` throws an `AuthenticationException`, it typically propagates up to the `ExceptionTranslationFilter` which in turns uses the `AuthenticationEntryPoint` to start the authentication process (e.g., redirect to login).
+If `AuthenticationManager` throws an `AuthenticationException`, it typically propagates up to the `ExceptionTranslationFilter` which in turns uses the `AuthenticationEntryPoint` to start the authentication process (typically by redirecting to a login page or returning an HTTP status like 401 Unauthorized in REST scenarios.).
 
 ## **ProviderManager: Default Implementation of AuthenticationManager**
 
@@ -281,18 +291,18 @@ class ProviderManager implements AuthenticationManager {
 
 	private List<AuthenticationProvider> providers = Collections.emptyList();
 
-	*//Construct a ProviderManager using the given AuthenticationProviders*
+	// Construct a ProviderManager using the given AuthenticationProviders
 	ProviderManager(List<AuthenticationProvider> providers) {
-		*//...*
+		// ...
 	}
 
 	Authentication authenticate(Authentication authentication) {
-		*//...*
+		//...
 		Class<? extends Authentication> toTest = authentication.getClass();
 		Authentication result = null;
 
-		for (AuthenticationProvider provider : getProviders()) {
-      // Check if this provider supports the presented authentication type
+		for (AuthenticationProvider provider: getProviders()) {
+        // Check if this provider supports the presented authentication type
 			if (!provider.supports(toTest)) {
 				continue;
 			}
@@ -300,15 +310,17 @@ class ProviderManager implements AuthenticationManager {
 			try {
 				result = provider.authenticate(authentication);
 			} catch (AuthenticationException e) {
-				*//...*
+				// ...
 			}
-		    *//...*
+		    // ...
     }
   }
 }
 ```
 
 When a user attempts to authenticate (e.g., by logging in), the **`ProviderManager`** iterates through its list of providers registrated with it and it delegates the authentication request to the first provider that supports the authentication type (e.g., username/password, token-based, etc.).
+
+One of the strengths of using `ProviderManager` is the ability to extend or customize the authentication process by adding custom AuthenticationProviders. This allows developers to implement business-specific authentication logic or integrate with external services for authentication.
 
 ## **AuthenticationProvider: Perform Specific Authentication**
 
@@ -318,12 +330,11 @@ This is an interface that defines the contract for components responsible for va
 
 So, developers can implement custom **`AuthenticationProvider`** instances to integrate Spring Security with their authentication logic.
 
-This interface has many OOTB implementations, the most common is **`DaoAuthenticationProvider`** (we’ll talk about it later):
-
+This interface has many OOTB implementations, the most common is **`DaoAuthenticationProvider`** (we’ll talk more about it later):
 - Retrieves user details from a **`UserDetailsService`** (usually backed by a database).
 - Validates credentials (e.g., username and password).
 
-You can also provide your own implemenatation of **`AuthenticationProvider` if you need to control the authentication logic:**
+You can also provide your own implemenatation of `AuthenticationProvider` if you need to control the authentication logic:
 
 ```java
 @Component
@@ -334,7 +345,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         final String name = authentication.getName();
         final String password = authentication.getCredentials().toString();
 
-        *// Authenticate against third-party and return an Authentication object*
+        // Authenticate against third-party and return an Authentication object
         return authenticateAgainstThirdPartyAndGetAuthentication(name, password);
     }
 
@@ -356,21 +367,21 @@ The `DaoAuthenticationProvider` is an OOTB `AuthenticationProvider` implementati
 
 Its core responsibility is to authenticate the user by comparing their credentials (sent with the HTTP request) with credentials stored in a database or other data source.
 
-The **`authenticate`** method is the core of the authentication process. It takes an **`Authentication`** object (typically **`UsernamePasswordAuthenticationToken`**) as input, retrieves user details from the **`UserDetailsService`**, compares the provided password with the stored password, and returns an authenticated **`Authentication`** object if successful.
+The `authenticate` method is the core of the authentication process. It takes an `Authentication` object (typically `UsernamePasswordAuthenticationToken`) as input, retrieves user details from the `UserDetailsService`, compares the provided password with the stored password, and returns an authenticated `Authentication` object if successful.
 
 ```java
 @Override
 public Authentication authenticate(Authentication authentication)
         throws AuthenticationException {
-    *// Retrieve user details from UserDetailsService*
+    // Retrieve user details from UserDetailsService
     UserDetails user = userDetailsService.loadUserByUsername(authentication.getName());
 
-    *// Compare passwords*
+    // Compare passwords
     if (!passwordEncoder.matches(authentication.getCredentials().toString(), user.getPassword())) {
         throw new BadCredentialsException("Invalid credentials");
     }
 
-    *// Authentication successful*
+    // Authentication successful
     return new UsernamePasswordAuthenticationToken(user, user.getPassword(), user.getAuthorities());
 }
 ```
@@ -390,13 +401,11 @@ This interface is typically used by **`DaoAuthenticationProvider`** to load us
 The **`AuthenticationEntryPoint`** is an interface in Spring Security that defines a single method, **`commence`**, which is invoked when a user tries to access a resource that requires authentication but they are not authenticated and did not provide any auth credentials .
 
 It is used in situations where:
-
 - A client (user or application) makes a request to a protected resource.
 - The client has not provided any credentials, or the provided credentials are invalid.
 - Spring Security intercepts the request and determines that the client needs to be authenticated.
 
 In such situations you may wanna for example:
-
 - Redirect the client to a login page (common for web applications).
 - Send an HTTP response with a status code and headers that prompt the client to provide credentials (common for APIs).
 
@@ -417,13 +426,13 @@ public class CustomAuthenticationEntryPoint implements AuthenticationEntryPoint 
     @Override
     public void commence(HttpServletRequest req, HttpServletResponse res,
                          AuthenticationException authException) throws IOException {
-        *// Set the response status to 401 Unauthorized*
+        // Set the response status to 401 Unauthorized
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 
-        *// Set the response content type to application/json*
+        // Set the response content type to application/json
         response.setContentType("application/json");
 
-        *// Write a JSON message to the response body*
+        // Write a JSON message to the response body
         response.getWriter().write("{\"error\": \"Unauthorized access - please provide valid credentials.\"}");
     }
 }
