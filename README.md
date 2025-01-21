@@ -1,4 +1,30 @@
-# Discussing Spring security servlet authentication architecture (Main classes/interface)
+# Table of Contents
+
+- [Table of Contents](#table-of-contents)
+- [**Introduction**](#introduction)
+- [**The authentication flow**](#the-authentication-flow)
+  - [**1. User Submits Credentials:**](#1-user-submits-credentials)
+  - [**2.** Request Intercepted by Filter Chain:](#2-request-intercepted-by-filter-chain)
+  - [**3. UsernamePasswordAuthenticationFilter Attempts Authentication:**](#3-usernamepasswordauthenticationfilter-attempts-authentication)
+  - [**4. Authentication Manager is Invoked:**](#4-authentication-manager-is-invoked)
+  - [**5. Authentication Providers are Consulted:**](#5-authentication-providers-are-consulted)
+  - [**6. UserDetailsService Retrieves User Details:**](#6-userdetailsservice-retrieves-user-details)
+  - [**7. Password Comparison:**](#7-password-comparison)
+  - [**8. Authentication Success or Failure:**](#8-authentication-success-or-failure)
+  - [**9. SecurityContext is Updated:**](#9-securitycontext-is-updated)
+  - [**10. User is Authenticated:**](#10-user-is-authenticated)
+- [**Discussing the main authentication components (classes/interfaces involved)**](#discussing-the-main-authentication-components-classesinterfaces-involved)
+  - [**AbstractAuthenticationProcessingFilter: Foundation for Authentication Filters**](#abstractauthenticationprocessingfilter-foundation-for-authentication-filters)
+  - [**SecurityContextHolder: Managing the SecurityContext**](#securitycontextholder-managing-the-securitycontext)
+  - [**SecurityContext: Carrying Authentication Information**](#securitycontext-carrying-authentication-information)
+  - [**Authentication: Representing User Credentials**](#authentication-representing-user-credentials)
+  - [**GrantedAuthority: Defining User Authorities**](#grantedauthority-defining-user-authorities)
+  - [**AuthenticationManager: Orchestrating Authentication Flow**](#authenticationmanager-orchestrating-authentication-flow)
+  - [**ProviderManager: Default Implementation of AuthenticationManager**](#providermanager-default-implementation-of-authenticationmanager)
+  - [**AuthenticationProvider: Perform Specific Authentication**](#authenticationprovider-perform-specific-authentication)
+  - [**DaoAuthenticationProvider**](#daoauthenticationprovider)
+  - [**UserDetailsService**♂](#userdetailsservice)
+  - [**Request Credentials with AuthenticationEntryPoint**](#request-credentials-with-authenticationentrypoint)
 
 # **Introduction**
 
@@ -388,7 +414,7 @@ public Authentication authenticate(Authentication authentication)
 
 The **`DaoAuthenticationProvider`** uses the **`UserDetailsService`** to get the details about a username (sent in the request credentials).
 
-## **UserDetailsService**
+## **UserDetailsService**♂
 
 The **`UserDetailsService`** is a core interface in Spring Security. It is used to retrieve user-related data (such as username, password, authorities).
 
