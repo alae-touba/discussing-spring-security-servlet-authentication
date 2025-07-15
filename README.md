@@ -28,6 +28,8 @@
 
 # **Introduction**
 
+![First Blog Image](first-blog-image.PNG)
+
 When exploring the official Spring Framework documentation on servlet authentication architecture, you'll encounter these fundamental classes and interfaces:
 
 1. **AuthenticationEntryPoint** - Initiates the authentication process when an unauthenticated user attempts to access a secured resource.
